@@ -7,10 +7,12 @@ import psola
 import soundfile as sf
 import scipy.signal as sig
 import time
-
-
 from functools import partial
 from pathlib import Path
+from pydub import AudioSegment
+from pytubefix import YouTube
+from pytubefix.cli import on_progress
+
 
 
 SEMITONES_IN_OCTAVE = 12
@@ -50,7 +52,7 @@ def aclosest_pitch_from_scale(f0, scale):
         sanitized_pitch[np.isnan(smoothed_sanitized_pitch)]
     return smoothed_sanitized_pitch
 
-def autotune(audio, sr, correction_function, plot=False):
+def autotune(audio, sr, correction_function, plot=False, scale = "1", output_folder = "output"):
     frame_length = 2048
     hop_length = frame_length // 4
     fmin = librosa.note_to_hz('C2')
@@ -66,6 +68,7 @@ def autotune(audio, sr, correction_function, plot=False):
     corrected_f0 = correction_function(f0)
 
     if plot:
+        os.makedirs(output_folder, exist_ok=True)
         stft = librosa.stft(audio, n_fft=frame_length, hop_length=hop_length)
         time_points = librosa.times_like(stft, sr=sr, hop_length=hop_length)
         log_stft = librosa.amplitude_to_db(np.abs(stft), ref=np.max)
@@ -77,30 +80,56 @@ def autotune(audio, sr, correction_function, plot=False):
         ax.legend(loc='upper right')
         plt.ylabel('Frequency [Hz]')
         plt.xlabel('Time [M:SS]')
-        plt.savefig('pitch_correction.png', dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(output_folder, f'pitch_correction_{scale}.png'), dpi=300, bbox_inches='tight')
+        plt.close(fig)
 
     return psola.vocode(audio, sample_rate=int(sr), target_pitch=corrected_f0, fmin=fmin, fmax=fmax)
 
-def main(scale, index, file_name ="music/vocal.mp3"):
-    # Hardcoded input values
-    vocals_file = file_name  # Replace with your file path
-    plot = True  # Set to True to generate a plot
-    correction_method = "scale"  # Choose between 'closest' or 'scale'
+def download_audio(url, path):
+        yt = YouTube(url, on_progress_callback=on_progress)
+        ys = yt.streams.get_audio_only()
+        audio_path = ys.download(output_path = path)
+        return audio_path
 
-    filepath = Path(vocals_file)
+def load_audio(filepath):
+    try:
+        # Use pydub to load the audio file
+        audio = AudioSegment.from_file(filepath)
+        sr = audio.frame_rate  # Sampling rate
+        y = np.array(audio.get_array_of_samples())  # Convert audio to numpy array
 
-    y, sr = librosa.load(str(filepath), sr=None, mono=False)
+        # If stereo, average channels to mono
+        if audio.channels > 1:
+            y = y.reshape((-1, audio.channels)).mean(axis=1)
 
-    if y.ndim > 1:
-        y = y[0, :]
+        # Normalize the audio to the range [-1.0, 1.0] for librosa compatibility
+        if np.issubdtype(y.dtype, np.integer):
+            y = y / np.iinfo(y.dtype).max
+        elif np.issubdtype(y.dtype, np.floating):
+            y = y / np.abs(y).max()
+
+        return y, sr
+    except Exception as e:
+        raise RuntimeError(f"Failed to load audio file: {filepath}. Error: {e}")
+
+
+def main(scale, index, audio_file_name, output_folder):
+    """Main function to apply pitch correction."""
+    plot = False
+    filepath = Path(audio_file_name)
+    correction_method = "scale"
+    y, sr = load_audio(str(filepath))
 
     correction_function = closest_pitch if correction_method == "closest" else \
         partial(aclosest_pitch_from_scale, scale=scale)
 
-    pitch_corrected_y = autotune(y, sr, correction_function, plot)
+    pitch_corrected_y = autotune(y, sr, correction_function, plot, scale, output_folder)
 
-    filepath = filepath.parent / (filepath.stem + f'_pitch_corrected_{index}' + filepath.suffix)
-    sf.write(str(filepath), pitch_corrected_y, sr)
+    output_file = Path(output_folder) / f'{filepath.stem}_pitch_corrected_{index}{filepath.suffix}'
+    # Ensure the output file has a supported format (e.g., .wav)
+    output_file = str(output_file.with_suffix(".wav"))
+    sf.write(output_file, pitch_corrected_y, sr)
+    
 
 if __name__ == '__main__':
     #scales = [
@@ -110,13 +139,16 @@ if __name__ == '__main__':
     #"C:dor", "D:dor", "E:dor", "F:dor", "G:dor", "A:dor", "B:dor",
     #"C:loc", "D:loc", "E:loc", "F:loc", "G:loc", "A:loc", "B:loc"
     #]
-    #video_url = "https://www.youtube.com/watch?v=8YeHPj9Qcw4"
-    #path = "music"
+    video_url = "https://www.youtube.com/watch?v=8YeHPj9Qcw4"
+    dir_name = "audio"
+    os.makedirs(dir_name, exist_ok=True)
 
-    #download_audio(video_url, path)
-    #count = 0
-    #file_name = os.listdir(path)[0]
+    audio_file_name = download_audio(video_url, dir_name)
+
+    output_folder = "output"
+    os.makedirs(output_folder, exist_ok=True)
 
     scales = ["C:maj", "C:min", "F:lyd", "G:dor", "B:loc", "A:min"] 
     for i in range(len(scales)):
-        main(scales[i], i + 1)#file_name
+        main(scales[i], i + 1, audio_file_name, output_folder)
+        break
