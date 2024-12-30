@@ -52,7 +52,7 @@ def aclosest_pitch_from_scale(f0, scale):
         sanitized_pitch[np.isnan(smoothed_sanitized_pitch)]
     return smoothed_sanitized_pitch
 
-def autotune(audio, sr, correction_function, plot=False, scale = "1", output_folder = "output"):
+def autotune(audio, sr, correction_function, plot, scale = "1", output_folder = "output_audio"):
     frame_length = 2048
     hop_length = frame_length // 4
     fmin = librosa.note_to_hz('C2')
@@ -115,7 +115,7 @@ def load_audio(filepath):
 
 def main(scale, index, audio_file_name, output_folder):
     """Main function to apply pitch correction."""
-    plot = False
+    plot = True
     filepath = Path(audio_file_name)
     correction_method = "scale"
     y, sr = load_audio(str(filepath))
@@ -129,7 +129,8 @@ def main(scale, index, audio_file_name, output_folder):
     # Ensure the output file has a supported format (e.g., .wav)
     output_file = str(output_file.with_suffix(".wav"))
     sf.write(output_file, pitch_corrected_y, sr)
-    
+    print("Audio Successfully stored")
+
 
 if __name__ == '__main__':
     #scales = [
@@ -139,16 +140,16 @@ if __name__ == '__main__':
     #"C:dor", "D:dor", "E:dor", "F:dor", "G:dor", "A:dor", "B:dor",
     #"C:loc", "D:loc", "E:loc", "F:loc", "G:loc", "A:loc", "B:loc"
     #]
-    video_url = "https://www.youtube.com/watch?v=8YeHPj9Qcw4"
-    dir_name = "audio"
+    video_url = "https://www.youtube.com/watch?v=-E_HCGKQXBk"
+    dir_name = "input_audio"
     os.makedirs(dir_name, exist_ok=True)
 
     audio_file_name = download_audio(video_url, dir_name)
 
-    output_folder = "output"
+    output_folder = "output_audio"
     os.makedirs(output_folder, exist_ok=True)
 
     scales = ["C:maj", "C:min", "F:lyd", "G:dor", "B:loc", "A:min"] 
     for i in range(len(scales)):
         main(scales[i], i + 1, audio_file_name, output_folder)
-        break
+
